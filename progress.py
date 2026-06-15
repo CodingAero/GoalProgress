@@ -46,7 +46,7 @@ def load_actual_data(data_path):
     return actual
 
 
-def plot_progress(endpoints_path, data_path, output_path):
+def plot_folder(ax, endpoints_path, data_path, title):
     endpoints = load_json(endpoints_path)
     start = endpoints["start"]
     end = endpoints["end"]
@@ -65,39 +65,73 @@ def plot_progress(endpoints_path, data_path, output_path):
     actual_dates = [d for d, _ in actual]
     actual_values = [v for _, v in actual]
 
-    plt.figure(figsize=(10, 6))
-    line_forecast = plt.plot(forecast_dates, forecast_values, label="Forecast (linear extrapolation)", marker="o")
-    line_actual = plt.plot(actual_dates, actual_values, label="Actual data", marker="s")
+    line_forecast = ax.plot(forecast_dates, forecast_values, label="Forecast (linear extrapolation)", marker="o")
+    line_actual = ax.plot(actual_dates, actual_values, label="Actual data", marker="s")
 
     forecast_color = line_forecast[0].get_color()
     actual_color = line_actual[0].get_color()
 
     # Add label for today if it's on the plot
-    today = parse_date("06-15-2026")
+    today = datetime.now().date()
     for date, value in forecast:
         if date == today:
-            idx = forecast_dates.index(date)
-            plt.annotate(f"{value:.1f}", xy=(date, value), xytext=(5, 5),
-                        textcoords="offset points", fontsize=12, ha="left", color=forecast_color)
+            ax.annotate(f"{value:.1f}", xy=(date, value), xytext=(5, 5),
+                        textcoords="offset points", fontsize=10, ha="left", color=forecast_color)
             break
 
     # Add label for most recent data point
     if actual:
         most_recent_date, most_recent_value = actual[-1]
-        idx = actual_dates.index(most_recent_date)
-        plt.annotate(f"{most_recent_value:.1f}", xy=(most_recent_date, most_recent_value),
-                    xytext=(5, -15), textcoords="offset points", fontsize=12, ha="left", color=actual_color)
+        ax.annotate(f"{most_recent_value:.1f}", xy=(most_recent_date, most_recent_value),
+                    xytext=(5, -15), textcoords="offset points", fontsize=10, ha="left", color=actual_color)
 
-    plt.title("Goal Progress")
-    plt.xlabel("Date")
-    plt.ylabel("Value")
-    plt.grid(True, linestyle="--", alpha=0.4)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=150)
-    plt.close()
+    ax.set_title(title)
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Value")
+    ax.grid(True, linestyle="--", alpha=0.4)
+    ax.legend()
+    ax.tick_params(axis="x", rotation=45)
 
 
 if __name__ == "__main__":
     root = Path(__file__).parent
-    plot_progress(root / "endPoints.json", root / "data.json", root / "progress.png")
+    # Find subdirectories that contain both data.json and endPoints.json
+    candidate_dirs = [p for p in root.iterdir() if p.is_dir()]
+    folders = []
+    for p in candidate_dirs:
+        data_file = p / "data.json"
+        endpoints_file = p / "endPoints.json"
+        if data_file.exists() and endpoints_file.exists():
+            folders.append((p.name, endpoints_file, data_file))
+
+    if not folders:
+        # Fallback to the original weight folder if present
+        weight_dir = root / "weight"
+        data_file = weight_dir / "data.json"
+        endpoints_file = weight_dir / "endPoints.json"
+        if data_file.exists() and endpoints_file.exists():
+            folders.append((weight_dir.name, endpoints_file, data_file))
+
+    if not folders:
+        raise SystemExit("No folders with data.json and endPoints.json found.")
+
+    import math
+
+    n = len(folders)
+    cols = min(n, 2)
+    rows = math.ceil(n / cols)
+
+    fig, axes = plt.subplots(rows, cols, figsize=(6 * cols, 4 * rows), squeeze=False)
+    axes_flat = [ax for row in axes for ax in row]
+
+    for idx, (name, endpoints_path, data_path) in enumerate(folders):
+        ax = axes_flat[idx]
+        plot_folder(ax, endpoints_path, data_path, title=name)
+
+    # Hide any unused axes
+    for ax in axes_flat[n:]:
+        ax.set_visible(False)
+
+    fig.tight_layout()
+    fig.savefig(root / "progress.png", dpi=150)
+    plt.close(fig)
